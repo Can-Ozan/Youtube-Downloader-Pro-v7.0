@@ -1,0 +1,51 @@
+name: Desktop checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ['3.11', '3.12']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install Qt system libraries and FFmpeg (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libopengl0 ffmpeg
+      - name: Install FFmpeg (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ffmpeg --no-progress -y
+      - name: Install FFmpeg (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg
+      - name: Install project and development dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check .
+      - name: Formatting
+        run: ruff format --check .
+      - name: Unit and local media integration tests
+        run: python -m pytest
+      - name: Compile and import
+        run: |
+          python -m compileall -q youtube_downloader_pro
+          python -c "from youtube_downloader_pro.ui.main_window import MainWindow; from youtube_downloader_pro.core.worker import run_worker"
+      - name: Application startup
+        run: python -m youtube_downloader_pro --smoke-test --data-dir .test-artifacts/ci-startup
